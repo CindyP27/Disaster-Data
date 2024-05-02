@@ -272,11 +272,6 @@ ggplot(median_duration, aes(x = incident_type, y = median_duration, fill = incid
 ```
 
 
-
-
-
-
-
 ```{r}
 library(r02pro)     #INSTALL IF NECESSARY
 library(tidyverse)  #INSTALL IF NECESSARY
@@ -295,8 +290,6 @@ str(my_dis)
 #str(my_dis)
 
 
-
-
 # Calculate the number of rows for training
 n_train <- round(0.8 * nrow(my_dis))
 
@@ -311,9 +304,6 @@ my_dis_test <- my_dis[-train_indices, ]
 dim(my_dis_train)
 dim(my_dis_test)
 ```
-
-
-
 
 ```{r}
 # Convert predictors to factor variables with lowest levels as reference
@@ -332,8 +322,6 @@ dis_data <- lm(duration_days ~ decade + region + incident_type + ih_program_decl
 summary(dis_data)
 
 ```
-
-
 
 ```{r}
 #Regression Tree
@@ -355,10 +343,6 @@ text(prune.dis, pretty=0)
 
 
 ```
-
-
-
-
 
 #Decision Tree
 
@@ -385,8 +369,6 @@ mse_train <- mean((yhat_train - dis_train)^2)
 
 mse_train
 ```
-
-
 
 #Bagging
 
@@ -422,8 +404,6 @@ mse_train_bag <- mean((yhat.bag_train - my_dis_train$duration_days)^2)
 cat("MSE for Test Set (Bagging):", mse_test_bag, "\n")
 cat("MSE for Training Set (Bagging):", mse_train_bag, "\n")
 ```
-
-
 
 #Random Forest
 
@@ -486,8 +466,6 @@ yhat.boost_train <- predict(boost.dis, newdata = my_dis_train, n.trees = best_n_
 mean((yhat.boost_train - dis_train)^2)
 
 
-
-
 # Calculate mean squared error for testing set
 mse_boost_test <- mean((yhat.boost - my_dis_test$duration_days)^2)
 
@@ -497,11 +475,6 @@ mse_boost_train <- mean((yhat.boost_train - my_dis_train$duration_days)^2)
 mse_boost_test
 mse_boost_train
 ```
-
-
-
-
-
 
 ```{r}
 #Frequency Table for each
@@ -520,31 +493,6 @@ for (i in seq_along(freq_tables)) {
   print(freq_tables[[i]])
   cat("\n")
 }
-
-```
-
-
-
-
-
-
-
-
-```{r}
-# Convert predictors to factor variables with lowest levels as reference
-my_dis$decade <- relevel(as.factor(my_dis$decade), ref = "1950s")
-my_dis$region <- relevel(as.factor(my_dis$region), ref = "FR1")
-my_dis$incident_type <- relevel(as.factor(my_dis$incident_type), ref = "Tornado")
-my_dis$ih_program_declared <- relevel(as.factor(my_dis$ih_program_declared), ref = "0")
-my_dis$ia_program_declared <- relevel(as.factor(my_dis$ia_program_declared), ref = "0")
-my_dis$pa_program_declared <- relevel(as.factor(my_dis$pa_program_declared), ref = "0")
-my_dis$hm_program_declared <- relevel(as.factor(my_dis$hm_program_declared), ref = "0")
-
-# Fit the linear regression model with factor variables
-dis_data <- lm(duration_days ~ decade + region + incident_type + ih_program_declared + ia_program_declared + pa_program_declared + hm_program_declared, data = my_dis)
-
-# Summary of
-summary(dis_data)
 
 ```
 
