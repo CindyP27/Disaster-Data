@@ -1,6 +1,6 @@
 ---
 title: "Machine Learning Final Project"
-author: "Cindy Patippe"
+author: "Michael Cziner and Cindy Patippe"
 date: "2024-04-30"
 output:
   pdf_document: default
