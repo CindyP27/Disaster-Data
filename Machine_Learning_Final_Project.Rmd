@@ -1,0 +1,678 @@
+---
+title: "Machine Learning Final Project"
+author: "Cindy Patippe"
+date: "2024-04-30"
+output:
+  pdf_document: default
+  html_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+setwd("/Users/cdp4029/Downloads")
+
+cran_url <- "https://cloud.r-project.org"
+#install.packages("ranger")
+library(dplyr)  # for data manipulation
+library(lubridate)  # for handling dates and durations
+library(tidyr)  # for data reshaping
+library(ranger)  # for random forest model
+library(ggplot2)  # for data visualization
+# Load required library
+library(lubridate)  # for handling dates and durations
+
+# Read the CSV file
+disaster <- read.csv("us_disaster_declarations.csv")
+
+# Convert start_date and end_date columns to Date format
+disaster$incident_begin_date <- as.Date(disaster$incident_begin_date )
+disaster$incident_end_date <- as.Date(disaster$incident_end_date)
+
+
+# Calculate duration weeks using lubridate package
+disaster$duration <- as.duration(disaster$incident_end_date - disaster$incident_begin_date)
+disaster$duration_weeks <- as.numeric(interval(disaster$incident_begin_date , disaster$incident_end_date ), unit = "weeks")
+
+
+# Calculate duration using lubridate package
+disaster$duration <- as.duration(disaster$incident_end_date - disaster$incident_begin_date)
+disaster$duration_days <- as.numeric(interval(disaster$incident_begin_date , disaster$incident_end_date ), unit = "days")
+
+
+
+# Remove unnecessary columns (hash, last_refresh, id)
+#disaster <- disaster %>%
+  #select(-c(hash, last_refresh, id))
+
+#Summary statistics
+summary(disaster)
+
+disaster$incident_type <- factor (disaster$incident_type)
+#str(disaster$incident_type)
+incident_type_table <- table(disaster$incident_type)
+
+#Filter out specific incident types
+filtered_disaster <- disaster %>%
+  filter (! (incident_type %in% c ("Biological", "Chemical", "Dam/Levee Break", "Fishing Losses", "Human Cause", "Mud/Landslide", "Terrorist", "Toxic Substances", "Tsunami", "Other")))
+
+filtered_disaster <- filtered_disaster %>%
+  mutate(duration_weeks = as.numeric(difftime(incident_end_date, incident_begin_date, units = "weeks")))
+
+
+filtered_disaster <- filtered_disaster %>%
+  group_by(incident_type) %>%
+mutate(mean_duration = mean(duration_weeks, na.rm = TRUE))
+
+
+
+ggplot(filtered_disaster, aes (x = incident_type, y = mean_duration)) + 
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(x = "Incident Type", y = "Mean Duration (weeks)", title = "Mean Duration of Each Incident Type") + theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+table <- table (filtered_disaster$incident_type)
+
+typhoon_count <- table["Typhoon"]
+hurricane_count <- table["Hurricane"]
+
+summary_table <- data.frame(
+  Incident_Type = c("Typhoon", "Hurricane"),
+  Count = c(typhoon_count, hurricane_count)
+)
+summary_table
+
+typhoon_hurricane <- filtered_disaster %>%
+  filter(incident_type %in% c("Typhoon", "Hurricane"))
+
+statecounts <- typhoon_hurricane %>%
+  group_by(state, incident_type) %>%
+  dplyr::summarize(count = n())
+
+statecounts_pivot <- statecounts %>%
+  pivot_wider(names_from = incident_type, values_from = count, names_prefix = "count_")
+
+merged_disaster <- filtered_disaster %>%
+  mutate(incident_type_merged = case_when(
+    incident_type %in% c ("Typhoon", "Hurricane") ~ "Hurricanes", 
+    TRUE ~ as.factor(incident_type)))
+filtered_disaster$year <- year(filtered_disaster$incident_begin_date)
+
+incident_years_summary <- filtered_disaster %>%
+  group_by(incident_type) %>%
+  dplyr::summarize(min_year = min(year), max_year = max(year, na.rm = TRUE))
+
+severe_storms <- filtered_disaster %>%
+  filter(incident_type == "Severe Storm")
+
+#print(severe_storms[, c("state", "incident_begin_date")])
+
+#filtered_disaster <- filtered_disaster %>%
+  #mutate(duration_weeks = ifelse(duration_weeks == 0,1, duration_weeks))
+
+#ggplot(filtered_disaster, aes(x = fy_declared, y = duration_weeks)) + 
+  #geom_point(color = "skyblue") + 
+  #labs(x = "Fiscal Year Declared", y = "Duration (weeks)", title = "Scatterplot") +
+  #theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Count frequencies of states and binary declared variables
+state_counts <- filtered_disaster %>%
+  count(state) %>%
+  arrange(desc(n))
+
+# View the results
+#print(state_counts)
+
+# Count frequencies of incident types for each binary declared variable
+incident_binary_counts <- filtered_disaster %>%
+  group_by(incident_type) %>%
+  dplyr::summarize(
+    ih_program_declared_count = sum(ih_program_declared),
+    ia_program_declared_count = sum(ia_program_declared),
+    pa_program_declared_count = sum(pa_program_declared),
+    hm_program_declared_count = sum(hm_program_declared)
+  )
+
+# View the results
+#print(incident_binary_counts)
+#Adding one to duration days
+filtered_disaster <- filtered_disaster %>%
+  mutate (duration_days = duration_days + 1)%>%
+mutate(region = case_when(
+  state %in% c("CT", "ME", "MA", "NH", "RI", "VT") ~ "FR1",
+  state %in% c("NJ", "NY", "PR", "VI") ~ "FR2",
+  state %in% c("DE", "MD", "PA", "VA", "DC", "WV") ~ "FR3",
+  state %in% c("AL", "FL", "GA", "KY", "MS", "NC", "SC", "TN") ~ "FR4",
+  state %in% c("IL", "IN", "MI", "MN", "OH", "WI") ~ "FR5",
+  state %in% c("AR", "LA", "NM", "OK", "TX") ~ "FR6",
+  state %in% c("IA", "KS", "MO", "NE") ~ "FR7",
+  state %in% c("CO", "MT", "ND", "SD", "UT", "WY") ~ "FR8",
+  state %in% c("AZ", "CA", "HI", "NV", "GU", "AS", "MP", "MH", "FM", "PW") ~ "FR9",
+  state %in% c("AK", "ID", "OR", "WA") ~ "FR10"))%>%
+mutate(decade = case_when(
+  year %in% 1953:1962 ~ "1950s",
+  year %in% 1963:1972 ~ "1960s",
+  year %in% 1973:1982 ~ "1970s",
+  year %in% 1983:1992 ~ "1980s",
+  year %in% 1993:2002 ~ "1990s",
+  year %in% 2003:2012 ~ "2000s",
+  year %in% 2013:2023 ~ "2010s"
+))
+
+filtered_disaster$ia_program_declared <- as.factor(filtered_disaster$ia_program_declared)
+filtered_disaster$ih_program_declared <-  as.factor(filtered_disaster$ih_program_declared)
+filtered_disaster$pa_program_declared <-  as.factor(filtered_disaster$pa_program_declared)
+filtered_disaster$hm_program_declared <-  as.factor(filtered_disaster$hm_program_declared)
+filtered_disaster$region <-  as.factor(filtered_disaster$region)
+filtered_disaster$decade <-  as.factor(filtered_disaster$decade)
+
+
+filtered_disaster <- filtered_disaster %>%
+  group_by(decade) %>%
+mutate(mean_duration_decade = mean(duration_days, na.rm = TRUE))
+
+
+
+ggplot(filtered_disaster, aes(x = decade, y = duration_days)) + 
+  geom_point(color = "skyblue") + 
+  labs(x = "Fiscal Year Declared", y = "Duration (days)", title = "Scatterplot") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Create barplot
+#ggplot(mean_duration, aes(x = year, y = mean_duration)) + 
+ # geom_bar(stat = "identity", fill = "skyblue") + 
+#  labs(x = "Fiscal Year Declared", y = "Average Duration (weeks)", title = "Barplot of Average Duration by Fiscal Year") +
+  #theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+# Create barplot
+ggplot(filtered_disaster, aes(x = decade, y = mean_duration_decade)) + 
+  geom_bar(stat = "identity", fill = "skyblue") + 
+  labs(x = "Fiscal Year Declared", y = "Average Duration (weeks)", title = "Barplot of Average Duration by Fiscal Year") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
+# Calculate mean duration by decade and incident type
+mean_duration_incident <- filtered_disaster %>%
+  group_by(incident_type) %>%
+  dplyr::summarize(mean_duration_decade = mean(mean_duration_decade, na.rm = TRUE))
+
+
+
+# Calculate mean duration by decade and incident type
+mean_duration_decade <- filtered_disaster %>%
+  group_by(decade) %>%
+  dplyr::summarize(mean_duration_decade = mean(mean_duration_decade, na.rm = TRUE))
+
+# Create a barplot
+ggplot(mean_duration_decade, aes(x = decade, y = mean_duration_decade, fill = decade)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Fiscal Year Declared", y = "Average Duration (days)", title = "Barplot of Average Duration by Fiscal Year") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+# Create a barplot
+ggplot(mean_duration_incident, aes(x = incident_type, y = mean_duration_decade, fill = incident_type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Fiscal Year Declared", y = "Average Duration (days)", title = "Barplot of Average Duration by Fiscal Year and Incident Type") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Calculate median and IQR duration overall
+filtered_disaster <- filtered_disaster %>%
+  ungroup() %>%
+  mutate(median_duration_all = median(duration_days, na.rm = TRUE),
+       IQR_duration_all = IQR(duration_days, na.rm = TRUE))
+
+# Calculate median and IQR duration for each region
+
+filtered_disaster <- filtered_disaster %>%
+  group_by(region) %>%
+  mutate(median_duration_reg = median(duration_days, na.rm = TRUE),
+       IQR_duration_reg = IQR(duration_days, na.rm = TRUE))
+
+median_duration_reg <- aggregate(median_duration_reg ~ region, data = filtered_disaster, FUN = median, na.rm = TRUE)
+IQR_duration_reg <- aggregate(IQR_duration_reg ~ region, data = filtered_disaster, FUN = median, na.rm = TRUE)
+
+# Calculate median and IQR duration for each incident type
+
+filtered_disaster <- filtered_disaster %>%
+    group_by(incident_type) %>%
+mutate(median_duration = median(duration_days, na.rm = TRUE),
+       IQR_duration = IQR(duration_days, na.rm = TRUE))
+
+median_duration <- aggregate(median_duration ~ incident_type, data = filtered_disaster, FUN = median, na.rm = TRUE)
+IQR_duration <- aggregate(IQR_duration ~ incident_type, data = filtered_disaster, FUN = median, na.rm = TRUE)
+
+
+median_duration_decade <- filtered_disaster %>%
+  group_by(decade) %>%
+  summarize(median_duration_decade = median(mean_duration_decade, na.rm = TRUE))
+
+# Create a barplot
+ggplot(median_duration_reg, aes(x = region, y = median_duration_reg, fill = region)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Fiscal Year Declared", y = "Median Duration (days)", title = "Barplot of Median Duration by  Region") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplot(median_duration_decade, aes(x = decade, y = median_duration_decade, fill = decade)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Fiscal Year Declared", y = "Median Duration (days)", title = "Barplot of Median Duration by Decade") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+# Create a barplot
+ggplot(median_duration, aes(x = incident_type, y = median_duration, fill = incident_type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Fiscal Year Declared", y = "Median Duration (days)", title = "Barplot of Median Duration by Incident Type") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+
+
+
+
+
+```{r}
+library(r02pro)     #INSTALL IF NECESSARY
+library(tidyverse)  #INSTALL IF NECESSARY
+library(MASS)
+
+my_dis <- filtered_disaster %>% 
+dplyr::select(duration_days, region, incident_type, ih_program_declared, ia_program_declared, pa_program_declared, hm_program_declared, decade) %>%
+na.omit()
+
+my_dis$decade <- as.factor(my_dis$decade)
+str(my_dis)
+
+#tr_ind <- 1:(nrow(my_dis)/20)
+#my_dis_train <- my_dis[tr_ind, ]
+#my_dis_test <- my_dis[-tr_ind, ]
+#str(my_dis)
+
+
+
+
+# Calculate the number of rows for training
+n_train <- round(0.8 * nrow(my_dis))
+
+# Generate random indices for training and testing
+train_indices <- sample(seq_len(nrow(my_dis)), size = n_train)
+
+# Create training and testing sets
+my_dis_train <- my_dis[train_indices, ]
+my_dis_test <- my_dis[-train_indices, ]
+
+# Check the dimensions of the training and testing sets
+dim(my_dis_train)
+dim(my_dis_test)
+```
+
+
+
+
+```{r}
+# Convert predictors to factor variables with lowest levels as reference
+my_dis$decade <- relevel(as.factor(my_dis$decade), ref = "1950s")
+my_dis$region <- relevel(as.factor(my_dis$region), ref = "FR1")
+my_dis$incident_type <- relevel(as.factor(my_dis$incident_type), ref = "Tornado")
+my_dis$ih_program_declared <- relevel(as.factor(my_dis$ih_program_declared), ref = "0")
+my_dis$ia_program_declared <- relevel(as.factor(my_dis$ia_program_declared), ref = "0")
+my_dis$pa_program_declared <- relevel(as.factor(my_dis$pa_program_declared), ref = "0")
+my_dis$hm_program_declared <- relevel(as.factor(my_dis$hm_program_declared), ref = "0")
+
+# Fit the linear regression model with factor variables
+dis_data <- lm(duration_days ~ decade + region + incident_type + ih_program_declared + ia_program_declared + pa_program_declared + hm_program_declared, data = my_dis)
+
+# Summary of
+summary(dis_data)
+
+```
+
+
+
+```{r}
+#Regression Tree
+#install.packages("rattle")
+
+
+library(MASS)
+library(tree)
+set.seed(1)
+str(my_dis_train)
+tree.dis <- tree(duration_days ~  region + incident_type + decade + ih_program_declared  +  ia_program_declared  +  pa_program_declared  + hm_program_declared, my_dis_train)
+
+cv.dis <- cv.tree(tree.dis)
+
+bestsize <- cv.dis$size[which.min(cv.dis$dev)] ##Get the best tree size (no. of leaf nodes)
+prune.dis <- prune.tree(tree.dis, best = bestsize) ##Prune the tree to this size
+plot(prune.dis)
+text(prune.dis, pretty=0)
+
+
+```
+
+
+
+
+
+#Decision Tree
+
+```{r}
+set.seed(1)
+# Step 1: Predict using tree.dis on my_dis_test
+yhat <- predict(tree.dis, newdata = my_dis_test)
+
+# Step 2: Extract the "duration_days" column from my_dis_test
+dis.test <- my_dis_test[,"duration_days"]
+# Convert ahp.test$duration_days to a numeric vector 
+dis.test_values <- as.numeric(dis.test$duration_days)
+# Step 3: Calculate mean squared error
+mse_test <- mean((yhat - dis.test_values)^2)
+
+# View the mean squared error
+mse_test
+
+yhat_train <- predict(tree.dis, newdata = my_dis_train)
+
+dis_train <- my_dis_train$duration_days
+
+mse_train <- mean((yhat_train - dis_train)^2)
+
+mse_train
+```
+
+
+
+#Bagging
+
+```{r}
+library(randomForest)
+set.seed(1)
+p <- ncol(my_dis)-1
+##Setting mtry = p for bagging
+bag.dis <- randomForest(duration_days ~ decade + region + incident_type + ih_program_declared  +  ia_program_declared  +  pa_program_declared  + hm_program_declared, data = my_dis_train, mtry = p, importance=TRUE)
+bag.dis
+
+yhat.bag <- predict(bag.dis,newdata = my_dis_test)
+mean((yhat.bag-dis.test_values)^2)
+
+yhat.bag_train <- predict(bag.dis,newdata = my_dis_train)
+mean((yhat.bag_train-dis_train)^2)
+
+importance(bag.dis)
+varImpPlot(bag.dis)
+
+
+
+# Calculate MSE for the test set
+mse_test_bag <- mean((yhat.bag - my_dis_test$duration_days)^2)
+
+# Predict on the training set
+yhat.bag_train <- predict(bag.dis, newdata = my_dis_train)
+
+# Calculate MSE for the training set
+mse_train_bag <- mean((yhat.bag_train - my_dis_train$duration_days)^2)
+
+# Print MSE for both test and training sets
+cat("MSE for Test Set (Bagging):", mse_test_bag, "\n")
+cat("MSE for Training Set (Bagging):", mse_train_bag, "\n")
+```
+
+
+
+#Random Forest
+
+```{r}
+set.seed(1)
+rf.dis <- randomForest(duration_days ~ decade + region + incident_type + ih_program_declared  +  ia_program_declared  +  pa_program_declared  + hm_program_declared, data = my_dis_train, importance = TRUE)
+yhat.rf <- predict(rf.dis, newdata = my_dis_test)
+mean((yhat.rf-dis.test_values)^2)
+
+yhat.rf_train <- predict(rf.dis, newdata = my_dis_train)
+mean((yhat.rf_train-dis_train)^2)
+
+importance(rf.dis)
+varImpPlot(rf.dis)
+
+
+# Calculate MSE for the test set
+mse_test_rf <- mean((yhat.rf - my_dis_test$duration_days)^2)
+
+# Predict on the training set
+yhat.rf_train <- predict(rf.dis, newdata = my_dis_train)
+
+# Calculate MSE for the training set
+mse_train_rf <- mean((yhat.rf_train - my_dis_train$duration_days)^2)
+
+# Print MSE for both test and training sets
+cat("MSE for Test Set:", mse_test_rf, "\n")
+cat("MSE for Training Set:", mse_train_rf, "\n")
+```
+#Boosting
+```{r}
+library(gbm)
+set.seed(1)
+
+# Convert binary variables to factors
+my_dis_train$ih_program_declared <- as.numeric(as.factor(my_dis_train$ih_program_declared))
+my_dis_train$ia_program_declared <- as.numeric(as.factor(my_dis_train$ia_program_declared))
+my_dis_train$pa_program_declared <- as.numeric(as.factor(my_dis_train$pa_program_declared))
+my_dis_train$hm_program_declared <- as.numeric(as.factor(my_dis_train$hm_program_declared))
+my_dis_train$region <- as.numeric(as.factor(my_dis_train$region))
+my_dis_train$incident_type <- as.numeric(as.factor(my_dis_train$incident_type))
+my_dis_train$decade <- as.numeric(as.factor(my_dis_train$decade))
+
+my_dis_test$ih_program_declared <- as.numeric(as.factor(my_dis_test$ih_program_declared))
+my_dis_test$ia_program_declared <- as.numeric(as.factor(my_dis_test$ia_program_declared))
+my_dis_test$pa_program_declared <- as.numeric(as.factor(my_dis_test$pa_program_declared))
+my_dis_test$hm_program_declared <- as.numeric(as.factor(my_dis_test$hm_program_declared))
+my_dis_test$region <- as.numeric(as.factor(my_dis_test$region))
+my_dis_test$incident_type <- as.numeric(as.factor(my_dis_test$incident_type))
+my_dis_test$decade <- as.numeric(as.factor(my_dis_test$decade))
+
+
+boost.dis <- gbm(duration_days ~ decade + region + incident_type + ih_program_declared  +  ia_program_declared  +  pa_program_declared  + hm_program_declared, data = my_dis_train, distribution = "gaussian", n.trees = 5000, interaction.depth = 1, cv.folds = 5)
+
+best_n_trees <- which.min(boost.dis$cv.error)
+summary(boost.dis)
+yhat.boost <- predict(boost.dis, newdata = my_dis_test, n.trees = best_n_trees)
+mean((yhat.boost - dis.test_values)^2)
+yhat.boost_train <- predict(boost.dis, newdata = my_dis_train, n.trees = best_n_trees)
+mean((yhat.boost_train - dis_train)^2)
+
+
+
+
+# Calculate mean squared error for testing set
+mse_boost_test <- mean((yhat.boost - my_dis_test$duration_days)^2)
+
+# Calculate mean squared error for training set
+mse_boost_train <- mean((yhat.boost_train - my_dis_train$duration_days)^2)
+
+mse_boost_test
+mse_boost_train
+```
+
+
+
+
+
+
+```{r}
+#Frequency Table for each
+# Initialize an empty list to store frequency tables
+freq_tables <- list()
+
+# Iterate through each column in the dataset
+for (col in names(my_dis_train)) {
+  # Create a frequency table for the current column
+  freq_tables[[col]] <- table(my_dis_train[[col]])
+}
+
+# Print all frequency tables
+for (i in seq_along(freq_tables)) {
+  cat("Frequency table for", names(freq_tables)[i], ":\n")
+  print(freq_tables[[i]])
+  cat("\n")
+}
+
+```
+
+
+
+
+
+
+
+
+```{r}
+# Convert predictors to factor variables with lowest levels as reference
+my_dis$decade <- relevel(as.factor(my_dis$decade), ref = "1950s")
+my_dis$region <- relevel(as.factor(my_dis$region), ref = "FR1")
+my_dis$incident_type <- relevel(as.factor(my_dis$incident_type), ref = "Tornado")
+my_dis$ih_program_declared <- relevel(as.factor(my_dis$ih_program_declared), ref = "0")
+my_dis$ia_program_declared <- relevel(as.factor(my_dis$ia_program_declared), ref = "0")
+my_dis$pa_program_declared <- relevel(as.factor(my_dis$pa_program_declared), ref = "0")
+my_dis$hm_program_declared <- relevel(as.factor(my_dis$hm_program_declared), ref = "0")
+
+# Fit the linear regression model with factor variables
+dis_data <- lm(duration_days ~ decade + region + incident_type + ih_program_declared + ia_program_declared + pa_program_declared + hm_program_declared, data = my_dis)
+
+# Summary of
+summary(dis_data)
+
+```
+
+
+```{r}
+# Load required libraries
+library(MASS)
+library(tree)
+library(randomForest)
+library(gbm)
+
+# Function to calculate R-squared and adjusted R-squared
+calculate_rsquared_table <- function(model, my_dis_test, my_dis_train) {
+  # Predictions for testing and training sets
+  yhat <- predict(model, newdata = my_dis_test)
+  yhat_train <- predict(model, newdata = my_dis_train)
+  
+  # Calculate R-squared for testing set
+  rsquared_test <- 1 - mean((yhat - my_dis_test$duration_days)^2) / var(my_dis_test$duration_days)
+  
+  # Calculate R-squared for training set
+  rsquared_train <- 1 - mean((yhat_train - my_dis_train$duration_days)^2) / var(my_dis_train$duration_days)
+  
+  # Calculate adjusted R-squared for testing and training sets
+  n <- nrow(my_dis_test) # Number of observations in the test set
+  p <- 8 # Number of predictors in the models (adjust as needed)
+  adj_rsquared_test <- 1 - (1 - rsquared_test) * (n - 1) / (n - p - 1)
+  adj_rsquared_train <- 1 - (1 - rsquared_train) * (n - 1) / (n - p - 1)
+  
+  # Create a data frame to store the results
+  results <- data.frame(Model = c("Regression Tree", "Bagging", "Random Forest", "Boosting"), 
+                        R_squared_Test = c(rsquared_test, NA, NA, NA), 
+                        R_squared_Train = c(rsquared_train, NA, NA, NA),
+                        Adjusted_R_squared_Test = c(adj_rsquared_test, NA, NA, NA),
+                        Adjusted_R_squared_Train = c(adj_rsquared_train, NA, NA, NA))
+  return(results)
+}
+
+# Load the data
+
+# Fit Regression Tree
+set.seed(1)
+tree.dis <- tree(duration_days ~ ., data = my_dis_train)
+prune.dis <- prune.tree(tree.dis, best = 5) # Prune the tree to improve performance
+
+# Fit Bagging
+set.seed(1)
+bag.dis <- randomForest(duration_days ~ ., data = my_dis_train, mtry = ncol(my_dis_train) - 1)
+
+# Fit Random Forest
+set.seed(1)
+rf.dis <- randomForest(duration_days ~ ., data = my_dis_train)
+
+# Fit Boosting
+set.seed(1)
+boost.dis <- gbm(duration_days ~ ., data = my_dis_train, distribution = "gaussian", n.trees = 5000, interaction.depth = 1, cv.folds = 5)
+
+# Calculate R-squared and adjusted R-squared for each model
+results_tree <- calculate_rsquared_table(prune.dis, my_dis_test, my_dis_train)
+results_bagging <- calculate_rsquared_table(bag.dis, my_dis_test, my_dis_train)
+results_rf <- calculate_rsquared_table(rf.dis, my_dis_test, my_dis_train)
+results_boosting <- calculate_rsquared_table(boost.dis, my_dis_test, my_dis_train)
+
+# Combine the results into a single data frame
+all_results <- rbind(results_tree, results_bagging, results_rf, results_boosting)
+
+# Print the resulting table
+print(all_results)
+
+
+
+
+```
+
+
+
+
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+
+# Scatterplot of Duration Days vs. Incident Types
+ggplot(my_dis, aes(x = incident_type, y = duration_days)) +
+  geom_point(alpha = 0.6) +
+  labs(x = "Incident Type", y = "Duration Days", title = "Scatterplot of Duration Days by Incident Type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Boxplot of Duration Days by Incident Type
+ggplot(my_dis, aes(x = incident_type, y = duration_days)) +
+  geom_boxplot(fill = "skyblue") +
+  labs(x = "Incident Type", y = "Duration Days", title = "Boxplot of Duration Days by Incident Type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Heatmap of Average Duration Days by Region and Incident Type
+heatmap_data <- my_dis %>%
+  group_by(region, incident_type) %>%
+  dplyr::summarize(mean_duration = mean(duration_days))
+
+ggplot(heatmap_data, aes(x = region, y = incident_type, fill = mean_duration)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "blue") +
+  labs(x = "Region", y = "Incident Type", title = "Heatmap of Average Duration Days by Region and Incident Type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Bubble Chart of Regions with Incident Counts and Duration Mean
+bubble_data <- my_dis %>%
+  group_by(region, incident_type) %>%
+  dplyr::summarise(incident_count = n(), mean_duration = mean(duration_days))
+
+ggplot(bubble_data, aes(x = mean_duration, y = incident_count, size = incident_count, color = incident_type)) +
+  geom_point(alpha = 0.7) +
+  scale_size_continuous(range = c(3, 10)) +
+  labs(x = "Mean Duration Days", y = "Incident Count", title = "Bubble Chart of Regions with Incident Counts and Duration Mean") +
+  theme_minimal()
+
+# Faceted Bar Chart of Duration Days by Incident Type and Region
+ggplot(my_dis, aes(x = region, y = duration_days, fill = region)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~incident_type, scales = "free_y") +
+  labs(x = "Region", y = "Duration Days", title = "Faceted Bar Chart of Duration Days by Incident Type and Region") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
